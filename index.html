@@ -133,6 +133,17 @@ video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1) scale(1.02);f
 .thumb{border:0;padding:0;margin:0;background:#eee;cursor:pointer;display:block;min-width:0;outline:2px solid transparent;outline-offset:1px;transition:outline-color .12s}
 .thumb img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block}
 .thumb:hover,.thumb:focus-visible{outline-color:#3a7fe0}
+.tg{display:flex;gap:10px;align-items:center;flex-wrap:wrap;flex:1}
+.selg{display:none}
+.winbox.selmode .norm{display:none}
+.winbox.selmode .selg{display:flex}
+.selinfo{margin-left:auto;font-size:12px;color:#555;white-space:nowrap}
+.thumb{position:relative}
+.thumb .ck{display:none;position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.28);box-shadow:0 1px 3px rgba(0,0,0,.45);pointer-events:none}
+.winbox.selmode .thumb .ck{display:block}
+.thumb.on{outline-color:#2f6fd3}
+.thumb.on img{filter:brightness(.82)}
+.thumb.on .ck{background:#2f6fd3 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5 10.5l3.2 3.2L15 7' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/100% no-repeat}
 .wempty{flex:1;padding:48px 12px;text-align:center;color:#777;background:#fff;font-size:14px}
 .viewer{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.84);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px;font-family:"paybooc","Apple SD Gothic Neo","Malgun Gothic",sans-serif}
 .viewer img{max-width:100%;max-height:calc(100vh - 120px);border:4px solid #fff;box-shadow:0 8px 30px rgba(0,0,0,.5)}
@@ -177,7 +188,7 @@ video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1) scale(1.02);f
 <div class="icons" id="icons" aria-label="사진 폴더"></div>
 <div class="win" id="win" hidden><div class="winbox" role="dialog" aria-modal="true" aria-labelledby="wname">
   <div class="wtitle"><span class="nm" id="wname"></span><span class="ct" id="wcount"></span><button class="wx" id="wclose" aria-label="닫기"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5L15 15M15 5L5 15" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round"/><path d="M5 5L15 15M15 5L5 15" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg></button></div>
-  <div class="wtool"><button class="xbtn" id="wzip">전체 저장 (.zip)</button><button class="xbtn warn" id="wdel">폴더 삭제</button></div>
+  <div class="wtool"><span class="tg norm"><button class="xbtn" id="wsel">선택</button><button class="xbtn" id="wzip">전체 저장 (.zip)</button><button class="xbtn warn" id="wdel">폴더 삭제</button></span><span class="tg selg"><button class="xbtn" id="wselall">전체 선택</button><button class="xbtn" id="wsave">저장</button><button class="xbtn warn" id="wdelsel">삭제</button><span class="selinfo" id="selinfo"></span><button class="xbtn" id="wselx">완료</button></span></div>
   <div class="wgrid" id="wgrid"></div>
   <div class="wempty" id="wempty">아직 찍은 사진이 없어요.</div>
 </div></div>
@@ -209,7 +220,7 @@ video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1) scale(1.02);f
     return DBP;
   }
   function dbDo(name,mode,fn){return openDB().then(function(d){if(!d)return null;return new Promise(function(res){try{var q=fn(d.transaction(name,mode).objectStore(name));q.onsuccess=function(){res(q.result);};q.onerror=function(){res(null);};}catch(e){res(null);}});});}
-  var folders=[],openF=null,vIdx=0,MAXP=50,winAnim=false;
+  var folders=[],openF=null,vIdx=0,MAXP=50,winAnim=false,selMode=false,sel=new Set();
   var iconsEl=document.getElementById('icons'),win=document.getElementById('win'),wname=document.getElementById('wname'),wcount=document.getElementById('wcount'),
       wgrid=document.getElementById('wgrid'),wempty=document.getElementById('wempty'),wzip=document.getElementById('wzip'),wdel=document.getElementById('wdel'),
       viewer=document.getElementById('viewer'),vimg=document.getElementById('vimg'),vname=document.getElementById('vname');
@@ -275,14 +286,14 @@ video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1) scale(1.02);f
   }
   function openWin(x){
     if(winAnim)return;
-    openF=x;renderWin();win.classList.add('ghost');win.hidden=false;winAnim=true;
+    openF=x;resetSel();renderWin();win.classList.add('ghost');win.hidden=false;winAnim=true;
     requestAnimationFrame(function(){win.classList.remove('ghost');});
     genie(true,iconFor(x.name),function(){winAnim=false;try{document.getElementById('wclose').focus();}catch(e){}});
   }
   function closeWin(instant){
     if(win.hidden||(winAnim&&!instant))return;
     disarm(wdel,'폴더 삭제');
-    var fin=function(){win.hidden=true;win.classList.remove('ghost');openF=null;winAnim=false;};
+    var fin=function(){win.hidden=true;win.classList.remove('ghost');openF=null;winAnim=false;resetSel();};
     if(instant===true||!openF){fin();return;}
     winAnim=true;win.classList.add('ghost');genie(false,iconFor(openF.name),fin);
   }
@@ -293,11 +304,18 @@ video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1) scale(1.02);f
     openF.photos.forEach(function(p,i){
       var b=document.createElement('button');b.className='thumb';
       var im=new Image();im.src=thumbUrl(p);im.alt=p.name;im.loading='lazy';
-      b.title=p.name;b.setAttribute('aria-label',p.name);
-      b.appendChild(im);b.addEventListener('click',function(){openViewer(i);});
+      b.title=p.name;b.setAttribute('aria-label',p.name);if(sel.has(p))b.classList.add('on');
+      var ck=document.createElement('span');ck.className='ck';
+      b.appendChild(im);b.appendChild(ck);
+      b.addEventListener('click',function(){
+        if(!selMode){openViewer(i);return;}
+        if(sel.has(p))sel.delete(p);else sel.add(p);
+        b.classList.toggle('on',sel.has(p));b.setAttribute('aria-pressed',sel.has(p));updSel();
+      });
       wgrid.appendChild(b);
     });
-    var empty=!openF.photos.length;wgrid.hidden=empty;wempty.hidden=!empty;wzip.disabled=empty;
+    var empty=!openF.photos.length;wgrid.hidden=empty;wempty.hidden=!empty;wzip.disabled=empty;wsel.disabled=empty;
+    sel.forEach(function(p){if(openF.photos.indexOf(p)<0)sel.delete(p);});updSel();
   }
   function openViewer(i){if(!openF||!openF.photos.length)return;vIdx=(i+openF.photos.length)%openF.photos.length;var p=openF.photos[vIdx];vimg.src=thumbUrl(p);vimg.alt=p.name;vname.textContent=p.name+'  ('+(vIdx+1)+'/'+openF.photos.length+')';disarm(document.getElementById('vdel'),'삭제');viewer.hidden=false;}
   function closeViewer(){viewer.hidden=true;}
@@ -317,6 +335,42 @@ video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1) scale(1.02);f
   win.addEventListener('click',function(e){if(e.target===win)closeWin();});
   wzip.addEventListener('click',async function(){if(!openF||!openF.photos.length)return;var x=openF;wzip.disabled=true;try{var z=await makeZip(x.photos,x.name);await saveFile(z,x.name+'.zip');}finally{wzip.disabled=!x.photos.length;}});
   twoStep(wdel,'폴더 삭제','한 번 더 누르면 삭제',delFolder);
+  /* ---- 사진 선택해서 저장/삭제 ---- */
+  var winboxEl=win.querySelector('.winbox'),wsel=document.getElementById('wsel'),wselall=document.getElementById('wselall'),
+      wsave=document.getElementById('wsave'),wdelsel=document.getElementById('wdelsel'),selinfo=document.getElementById('selinfo');
+  function resetSel(){selMode=false;sel.clear();winboxEl.classList.remove('selmode');disarm(wdelsel,'삭제');}
+  function setSel(on){resetSel();selMode=!!on;winboxEl.classList.toggle('selmode',selMode);renderWin();}
+  function updSel(){
+    var n=sel.size,all=openF?openF.photos.length:0;
+    selinfo.textContent=n?n+'장 선택됨':'사진을 눌러 선택하세요';
+    wsave.disabled=wdelsel.disabled=!n;wsave.textContent=n>1?'저장 (.zip)':'저장';
+    wselall.textContent=(n&&n===all)?'선택 해제':'전체 선택';
+    if(!n)disarm(wdelsel,'삭제');
+  }
+  wsel.addEventListener('click',function(){setSel(true);});
+  document.getElementById('wselx').addEventListener('click',function(){setSel(false);});
+  wselall.addEventListener('click',function(){
+    if(!openF)return;
+    if(sel.size===openF.photos.length)sel.clear();else openF.photos.forEach(function(p){sel.add(p);});
+    renderWin();
+  });
+  wsave.addEventListener('click',async function(){
+    if(!openF)return;var x=openF,arr=x.photos.filter(function(p){return sel.has(p);});if(!arr.length)return;
+    if(arr.length===1){saveFile(arr[0].blob,arr[0].name);return;}
+    wsave.disabled=true;
+    try{var z=await makeZip(arr,x.name);await saveFile(z,x.name+'_'+arr.length+'장.zip');}finally{updSel();}
+  });
+  twoStep(wdelsel,'삭제','한 번 더 누르면 삭제',function(){
+    if(!openF||!sel.size)return;var x=openF;
+    x.photos=x.photos.filter(function(p){
+      if(!sel.has(p))return true;
+      if(p.url)URL.revokeObjectURL(p.url);
+      if(p.id!=null)dbDo('photos','readwrite',function(st){return st.delete(p.id);});
+      return false;
+    });
+    sel.clear();bumpIcon(x.name);
+    if(x.photos.length)renderWin();else setSel(false);
+  });
   document.getElementById('vclose').addEventListener('click',closeViewer);
   viewer.addEventListener('click',function(e){if(e.target===viewer)closeViewer();});
   document.getElementById('vprev').addEventListener('click',function(){openViewer(vIdx-1);});
@@ -325,7 +379,7 @@ video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1) scale(1.02);f
   twoStep(document.getElementById('vdel'),'삭제','한 번 더 누르면 삭제',delPhoto);
   document.addEventListener('keydown',function(e){
     if(!viewer.hidden){if(e.key==='Escape')closeViewer();else if(e.key==='ArrowLeft')openViewer(vIdx-1);else if(e.key==='ArrowRight')openViewer(vIdx+1);}
-    else if(!win.hidden&&e.key==='Escape')closeWin();
+    else if(!win.hidden&&e.key==='Escape'){if(selMode){setSel(false);}else closeWin();}
   });
   var CRCT=(function(){var t=new Uint32Array(256);for(var n=0;n<256;n++){var c=n;for(var k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
   function crc32(u){var c=0xFFFFFFFF;for(var i=0;i<u.length;i++)c=CRCT[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
